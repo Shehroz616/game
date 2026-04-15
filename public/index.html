@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Play the classic Pakistani party game Badsha Sipahi Wazeer Chor online with friends in real-time!">
+  <title>Badsha Sipahi Wazeer Chor — Play Online</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👑</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <!-- Logo -->
+    <div class="game-logo">
+      <span class="star">☪✦</span>
+      <h1>Badsha Sipahi<br>Wazeer Chor</h1>
+      <p class="subtitle">The Classic Pakistani Game</p>
+    </div>
+
+    <!-- Main Card -->
+    <div class="glass-card" id="main-card">
+      <!-- Tabs -->
+      <div class="tab-group">
+        <button class="tab-btn active" data-tab="create" id="tab-create-btn">🏠 Create Game</button>
+        <button class="tab-btn" data-tab="join" id="tab-join-btn">🎮 Join Game</button>
+      </div>
+
+      <!-- Create Game Tab -->
+      <div class="tab-content active" id="tab-create">
+        <div class="form-group">
+          <label for="host-name">Your Name</label>
+          <input type="text" class="form-input" id="host-name" placeholder="Enter your name" maxlength="15" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="total-rounds">Number of Rounds</label>
+          <input type="number" class="form-input" id="total-rounds" placeholder="5" min="1" max="20" value="5">
+        </div>
+        <button class="btn btn-primary" id="create-btn">
+          <span>👑</span> Create Game Room
+        </button>
+      </div>
+
+      <!-- Join Game Tab -->
+      <div class="tab-content" id="tab-join">
+        <div class="form-group">
+          <label for="player-name">Your Name</label>
+          <input type="text" class="form-input" id="player-name" placeholder="Enter your name" maxlength="15" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="room-code">Room Code</label>
+          <input type="text" class="form-input" id="room-code" placeholder="e.g. A3F7" maxlength="4" style="text-transform: uppercase; letter-spacing: 6px; font-size: 1.3rem; text-align: center;" autocomplete="off">
+        </div>
+        <button class="btn btn-success" id="join-btn">
+          <span>🎮</span> Join Game
+        </button>
+      </div>
+    </div>
+
+    <!-- Role Info -->
+    <div style="margin-top: 30px; text-align: center; opacity: 0.5;">
+      <p style="font-size: 0.8rem; color: var(--white-muted);">
+        👑 Badsha &nbsp;·&nbsp; 🎖️ Wazeer &nbsp;·&nbsp; ⚔️ Sipahi &nbsp;·&nbsp; 🥷 Chor
+      </p>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/index.js"></script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Player game view — play Badsha Sipahi Wazeer Chor in real-time.">
+  <title>Playing — BSWC</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+</head>
+<body>
+  <div class="container player-container">
+    <!-- Header -->
+    <div class="game-logo" style="margin-bottom: 20px;">
+      <h1 style="font-size: 1.4rem;">🎮 <span id="display-player-name">Player</span></h1>
+      <p class="subtitle" style="font-size: 0.75rem;">Room: <span id="display-room-code">----</span></p>
+    </div>
+
+    <!-- Waiting for Game to Start -->
+    <div class="glass-card" id="waiting-section">
+      <div class="section-title">
+        <span class="icon">⏳</span> Waiting Room
+      </div>
+      <div class="status-message status-waiting">
+        <span>Waiting for host to start the round</span>
+        <div class="spinner"></div>
+      </div>
+      <ul class="player-list" id="player-list-waiting">
+      </ul>
+    </div>
+
+    <!-- Game Playing Area -->
+    <div class="hidden" id="game-section">
+      <!-- Round Info -->
+      <div class="round-badge" id="round-badge" style="display: flex; justify-content: center; margin-bottom: 20px;">
+        🎴 Round 0 / 0
+      </div>
+
+      <!-- Your Role Card -->
+      <div class="glass-card" style="margin-bottom: 20px; text-align: center;">
+        <div class="section-title" style="justify-content: center;">
+          <span class="icon">🃏</span> Your Chit
+        </div>
+        <div class="role-card-wrapper" id="role-card-wrapper">
+          <div class="role-card" id="role-card">
+            <div class="role-card-face role-card-back">
+              <div class="card-pattern">☪</div>
+              <div class="card-text">Your Chit</div>
+            </div>
+            <div class="role-card-face role-card-front" id="role-card-front">
+              <div class="role-emoji" id="role-emoji">👑</div>
+              <div class="role-name" id="role-name">Badsha</div>
+              <div class="role-points" id="role-points">1000 points</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Revealed Roles Section -->
+      <div class="glass-card" style="margin-bottom: 20px;">
+        <div class="section-title">
+          <span class="icon">📢</span> Revealed Identities
+        </div>
+        <div class="revealed-roles" id="revealed-roles">
+        </div>
+      </div>
+
+      <!-- Wazeer Guess Section (only visible to Wazeer) -->
+      <div class="glass-card hidden" id="guess-section">
+        <div class="guess-title">🔍 You are the Wazeer! Find the Chor!</div>
+        <p style="text-align: center; font-size: 0.85rem; color: var(--white-muted); margin-bottom: 16px;">
+          One of these players is the Chor. Choose wisely!
+        </p>
+        <div class="guess-options" id="guess-options"></div>
+        <button class="btn btn-primary" id="submit-guess-btn" disabled style="margin-top: 20px;">
+          <span>🎯</span> Submit Guess
+        </button>
+      </div>
+
+      <!-- Non-Wazeer Waiting -->
+      <div class="glass-card hidden" id="waiting-guess-section">
+        <div class="status-message status-info">
+          <span>⏳ Wazeer is deciding who the Chor is</span>
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scoreboard (visible between rounds) -->
+    <div class="glass-card hidden" id="scoreboard-section" style="margin-top: 20px;">
+      <div class="section-title">
+        <span class="icon">🏆</span> Scoreboard
+      </div>
+      <table class="scoreboard" id="scoreboard-table">
+        <thead>
+          <tr><th>Rank</th><th>Player</th><th>Score</th></tr>
+        </thead>
+        <tbody id="scoreboard-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Round Results Overlay -->
+  <div class="results-overlay hidden" id="results-overlay">
+    <div class="results-content">
+      <div class="result-emoji" id="result-emoji">🎯</div>
+      <div class="result-verdict" id="result-verdict">Wazeer guessed correctly!</div>
+      <hr class="divider">
+      <div class="section-title" style="justify-content: center;">
+        <span class="icon">🎴</span> All Roles Revealed
+      </div>
+      <div class="round-results-list" id="round-results-list"></div>
+      <hr class="divider">
+      <div id="result-scores-section"></div>
+      <button class="btn btn-secondary" id="close-results-btn" style="margin-top: 16px;">
+        Continue
+      </button>
+    </div>
+  </div>
+
+  <!-- Game Over Overlay -->
+  <div class="results-overlay hidden" id="game-over-overlay">
+    <div class="results-content game-over-screen">
+      <div class="trophy">🏆</div>
+      <h2>Game Over!</h2>
+      <div class="winner-name" id="winner-name"></div>
+      <table class="scoreboard" id="final-scoreboard">
+        <thead>
+          <tr><th>Rank</th><th>Player</th><th>Score</th></tr>
+        </thead>
+        <tbody id="final-scoreboard-body"></tbody>
+      </table>
+      <button class="btn btn-primary" id="back-home-btn" style="margin-top: 20px;">
+        <span>🏠</span> Back to Home
+      </button>
+    </div>
+  </div>
+
+  <!-- Host Disconnected Overlay -->
+  <div class="results-overlay hidden" id="host-dc-overlay">
+    <div class="results-content" style="text-align: center;">
+      <div style="font-size: 3rem; margin-bottom: 16px;">😵</div>
+      <h2 style="font-family: var(--font-heading); font-size: 1.4rem; color: #e74c3c; margin-bottom: 8px;">Host Disconnected</h2>
+      <p style="color: var(--white-muted); margin-bottom: 20px;">The host has left the game.</p>
+      <button class="btn btn-primary" onclick="window.location.href='/'">
+        <span>🏠</span> Back to Home
+      </button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/player.js"></script>
+</body>
+</html>
