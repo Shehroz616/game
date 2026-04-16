@@ -35,9 +35,16 @@ class GameManager {
       totalRounds: Math.max(1, Math.min(20, totalRounds || 5)),
       currentRound: 0,
       phase: PHASES.WAITING,
-      players: [],
+      players: [{
+        id: hostSocketId,
+        name: hostName,
+        totalScore: 0,
+        connected: true,
+        isReady: false
+      }],
       currentRoundObj: null,
-      roundHistory: []
+      roundHistory: [],
+      readyCount: 0
     };
     this.rooms.set(roomCode, room);
     return room;
@@ -84,7 +91,8 @@ class GameManager {
       id: socketId,
       name: playerName,
       totalScore: 0,
-      connected: true
+      connected: true,
+      isReady: false
     };
 
     room.players.push(player);
@@ -131,6 +139,8 @@ class GameManager {
 
     room.currentRound++;
     room.phase = PHASES.REVEAL;
+    room.readyCount = 0;
+    room.players.forEach(p => p.isReady = false);
 
     // Create a new round and distribute chits
     const round = new Round(
@@ -141,6 +151,20 @@ class GameManager {
     room.currentRoundObj = round;
 
     return { success: true, room, round };
+  }
+
+  /**
+   * Mark player as ready for next round
+   */
+  setPlayerReady(roomCode, socketId) {
+    const room = this.getRoom(roomCode);
+    if (!room) return null;
+    const player = room.players.find(p => p.id === socketId);
+    if (player && !player.isReady) {
+      player.isReady = true;
+      room.readyCount++;
+    }
+    return { room, allReady: room.readyCount === 4 };
   }
 
   /**

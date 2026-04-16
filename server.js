@@ -43,7 +43,8 @@ io.on('connection', (socket) => {
       socket.emit('room-created', {
         roomCode: room.roomCode,
         totalRounds: room.totalRounds,
-        hostName: room.hostName
+        hostName: room.hostName,
+        players: room.players.map(p => ({ id: p.id, name: p.name }))
       });
       console.log(`🏠 Room ${room.roomCode} created by ${hostName}`);
     } catch (err) {
@@ -103,23 +104,6 @@ io.on('connection', (socket) => {
       });
     });
 
-    // Send role info to host (host sees Badsha & Wazeer like everyone else)
-    const badshaId = round.getPlayerByRole('badsha');
-    const wazeerId = round.getPlayerByRole('wazeer');
-    const badshaPlayer = room.players.find(p => p.id === badshaId);
-    const wazeerPlayer = room.players.find(p => p.id === wazeerId);
-    const hiddenPlayers = room.players.filter(p =>
-      round.roles[p.id] === 'sipahi' || round.roles[p.id] === 'chor'
-    );
-
-    io.to(room.hostSocketId).emit('host-round-started', {
-      roundNumber: room.currentRound,
-      totalRounds: room.totalRounds,
-      badsha: { id: badshaId, name: badshaPlayer.name },
-      wazeer: { id: wazeerId, name: wazeerPlayer.name },
-      hiddenPlayers: hiddenPlayers.map(p => ({ id: p.id, name: p.name }))
-    });
-
     console.log(`🎴 Round ${room.currentRound} started in room ${room.roomCode}`);
   });
 
@@ -163,6 +147,18 @@ io.on('connection', (socket) => {
       roundHistory: result.roundHistory
     });
     console.log(`🛑 Game ended early in room ${roomCode}`);
+  });
+
+  // ─── PLAYER: Ready for next round ───
+  socket.on('player-ready', ({ roomCode }) => {
+    const result = gameManager.setPlayerReady(roomCode, socket.id);
+    if (result) {
+      io.to(roomCode).emit('player-ready-update', {
+        readyCount: result.room.readyCount,
+        allReady: result.allReady
+      });
+      console.log(`✅ Player ready in ${roomCode} (${result.room.readyCount}/4)`);
+    }
   });
 
   // ─── Disconnect handling ───

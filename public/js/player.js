@@ -6,6 +6,8 @@ const socket = io();
 const roomCode = sessionStorage.getItem('roomCode');
 const playerName = sessionStorage.getItem('playerName');
 let selectedGuessId = null;
+let amIReady = false;
+let cachedFinalScores = null;
 
 // Redirect if no room info
 if (!roomCode || !playerName) {
@@ -183,6 +185,8 @@ socket.on('player-left', ({ players }) => {
 });
 
 socket.on('round-started', ({ roundNumber, totalRounds, yourRole, badsha, wazeer, hiddenPlayers, isWazeer }) => {
+  amIReady = false;
+  submitGuessBtn.innerHTML = '<span>🎯</span> Submit Guess';
   // Switch to game view
   waitingSection.classList.add('hidden');
   gameSection.classList.remove('hidden');
@@ -215,6 +219,11 @@ socket.on('round-started', ({ roundNumber, totalRounds, yourRole, badsha, wazeer
 });
 
 socket.on('round-result', ({ results, totalScores, isGameOver }) => {
+  if (isGameOver) {
+    closeResultsBtn.innerHTML = 'View Final Results 🏆';
+  } else {
+    closeResultsBtn.innerHTML = 'Continue (Ready for Next Round)';
+  }
   // Hide guess/waiting sections
   guessSection.classList.add('hidden');
   waitingGuessSection.classList.add('hidden');
@@ -222,12 +231,15 @@ socket.on('round-result', ({ results, totalScores, isGameOver }) => {
   // Show results overlay
   if (results.wasCorrect) {
     resultEmoji.textContent = '🎯';
-    resultVerdict.textContent = 'Wazeer caught the Chor!';
+    resultVerdict.innerHTML = `Wazeer caught the Chor!<br><span style="font-size:1rem;color:rgba(255,255,255,0.7);font-weight:normal;margin-top:8px;display:block;">Wazeer guessed <b>${escapeHtml(results.guessedPlayer.name)}</b> (who was the actual Chor!)</span>`;
     resultVerdict.className = 'result-verdict correct';
+    new Audio('/sounds/click-nice.mp3').play().catch(e => console.warn('Audio play blocked:', e));
   } else {
     resultEmoji.textContent = '😈';
-    resultVerdict.textContent = 'Chor escaped! Wazeer was wrong!';
+    const actualChor = results.roles.find(r => r.role === 'chor');
+    resultVerdict.innerHTML = `Chor escaped! Wazeer was wrong!<br><span style="font-size:1rem;color:rgba(255,255,255,0.7);font-weight:normal;margin-top:8px;display:block;">Wazeer guessed <b>${escapeHtml(results.guessedPlayer.name)}</b>, but the actual Chor was <b>${escapeHtml(actualChor.name)}</b>!</span>`;
     resultVerdict.className = 'result-verdict wrong';
+    new Audio('/sounds/faaaa.mp3').play().catch(e => console.warn('Audio play blocked:', e));
   }
 
   // Show all roles with points
@@ -270,30 +282,7 @@ socket.on('round-result', ({ results, totalScores, isGameOver }) => {
 });
 
 socket.on('game-over', ({ finalScores }) => {
-  // Close results overlay first
-  resultsOverlay.classList.add('hidden');
-
-  const winner = finalScores[0];
-  const isWinner = winner.name === playerName;
-  winnerNameEl.textContent = isWinner
-    ? `🎉 You win with ${winner.totalScore} points!`
-    : `🎉 ${winner.name} wins with ${winner.totalScore} points!`;
-
-  let html = '';
-  finalScores.forEach((p, i) => {
-    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
-    const isMe = p.name === playerName;
-    html += `
-      <tr class="${i === 0 ? 'winner' : ''}" ${isMe ? 'style="background: rgba(212,175,55,0.08);"' : ''}>
-        <td><span class="rank-badge ${rankClass}">${i + 1}</span></td>
-        <td>${escapeHtml(p.name)} ${isMe ? '⭐' : ''}</td>
-        <td>${p.totalScore}</td>
-      </tr>`;
-  });
-  finalScoreboardBody.innerHTML = html;
-
-  gameOverOverlay.classList.remove('hidden');
-  spawnConfetti();
+  cachedFinalScores = finalScores;
 });
 
 socket.on('host-disconnected', () => {
@@ -308,17 +297,51 @@ socket.on('error-msg', ({ message }) => {
 
 // ─── Close Results ───
 closeResultsBtn.addEventListener('click', () => {
-  resultsOverlay.classList.add('hidden');
+  if (cachedFinalScores) {
+    showGameOverScreen();
+    return;
+  }
 
-  // Reset game section for next round
+  if (amIReady) return;
+  amIReady = true;
+  closeResultsBtn.textContent = 'Waiting for others...';
+  socket.emit('player-ready', { roomCode });
+
+  resultsOverlay.classList.add('hidden');
   guessSection.classList.add('hidden');
   waitingGuessSection.classList.add('hidden');
   roleCard.classList.remove('flipped');
-
-  // Show waiting section
-  waitingSection.classList.remove('hidden');
   gameSection.classList.add('hidden');
+  waitingSection.classList.remove('hidden');
+  waitingSection.querySelector('.status-waiting span').textContent = 'Waiting for Host to start next round...';
 });
+
+function showGameOverScreen() {
+  currentPhase = 'finished';
+  resultsOverlay.classList.add('hidden');
+
+  const winner = cachedFinalScores[0];
+  const isWinner = winner.name === playerName;
+  winnerNameEl.textContent = isWinner
+    ? `🎉 You win with ${winner.totalScore} points!`
+    : `🎉 ${winner.name} wins with ${winner.totalScore} points!`;
+
+  let html = '';
+  cachedFinalScores.forEach((p, i) => {
+    const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
+    const isMe = p.name === playerName;
+    html += `
+      <tr class="${i === 0 ? 'winner' : ''}" ${isMe ? 'style="background: rgba(212,175,55,0.08);"' : ''}>
+        <td><span class="rank-badge ${rankClass}">${i + 1}</span></td>
+        <td>${escapeHtml(p.name)} ${isMe ? '⭐' : ''}</td>
+        <td>${p.totalScore}</td>
+      </tr>`;
+  });
+  finalScoreboardBody.innerHTML = html;
+
+  gameOverOverlay.classList.remove('hidden');
+  spawnConfetti();
+}
 
 // ─── Back Home ───
 backHomeBtn.addEventListener('click', () => {

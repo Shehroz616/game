@@ -111,6 +111,44 @@ body::after {
   100% { transform: translateY(-30px); }
 }
 
+/* ─── Host Layout ─── */
+.host-layout {
+  display: flex;
+  gap: 24px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  align-items: flex-start;
+  padding: 30px 20px;
+}
+
+.host-panel {
+  flex: 1;
+  min-width: 320px;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.player-panel {
+  flex: 2;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 850px) {
+  .host-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+  .host-panel {
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
 /* ─── Container ─── */
 .container {
   max-width: 600px;

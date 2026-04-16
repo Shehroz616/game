@@ -1,4 +1,4 @@
-// Host dashboard logic
+// Host dashboard & Player logic
 
 const socket = io();
 
@@ -6,31 +6,62 @@ const socket = io();
 const roomCode = sessionStorage.getItem('roomCode');
 const hostName = sessionStorage.getItem('hostName');
 let currentPhase = 'waiting';
+let selectedGuessId = null;
+let amIReady = false;
+let cachedFinalScores = null;
 
 // Redirect if no host info
 if (!hostName) {
   window.location.href = '/';
 }
 
-// ─── DOM Elements ───
+// ─── Host DOM Elements ───
 const displayRoomCode = document.getElementById('display-room-code');
 const playerList = document.getElementById('player-list');
 const playerCountBadge = document.getElementById('player-count-badge');
 const startRoundBtn = document.getElementById('start-round-btn');
-const roundSection = document.getElementById('round-section');
-const roundBadge = document.getElementById('round-badge');
-const revealedRoles = document.getElementById('revealed-roles');
-const hiddenPlayersDisplay = document.getElementById('hidden-players-display');
-const hostStatus = document.getElementById('host-status');
+const startRoundText = document.getElementById('start-round-text');
 const scoreboardSection = document.getElementById('scoreboard-section');
 const scoreboardBody = document.getElementById('scoreboard-body');
 const actionButtons = document.getElementById('action-buttons');
 const nextRoundBtn = document.getElementById('next-round-btn');
+const nextRoundText = document.getElementById('next-round-text');
 const endGameBtn = document.getElementById('end-game-btn');
 const gameOverOverlay = document.getElementById('game-over-overlay');
 const winnerName = document.getElementById('winner-name');
 const finalScoreboardBody = document.getElementById('final-scoreboard-body');
 const newGameBtn = document.getElementById('new-game-btn');
+
+// ─── Player DOM Elements ───
+const waitingSection = document.getElementById('waiting-section');
+const gameSection = document.getElementById('game-section');
+const roundBadge = document.getElementById('round-badge');
+const roleCard = document.getElementById('role-card');
+const roleCardWrapper = document.getElementById('role-card-wrapper');
+const roleCardFront = document.getElementById('role-card-front');
+const roleEmoji = document.getElementById('role-emoji');
+const roleName = document.getElementById('role-name');
+const rolePoints = document.getElementById('role-points');
+const revealedRoles = document.getElementById('revealed-roles');
+const guessSection = document.getElementById('guess-section');
+const guessOptions = document.getElementById('guess-options');
+const submitGuessBtn = document.getElementById('submit-guess-btn');
+const waitingGuessSection = document.getElementById('waiting-guess-section');
+const hostStatus = document.getElementById('host-status');
+const resultsOverlay = document.getElementById('results-overlay');
+const resultEmoji = document.getElementById('result-emoji');
+const resultVerdict = document.getElementById('result-verdict');
+const roundResultsList = document.getElementById('round-results-list');
+const resultScoresSection = document.getElementById('result-scores-section');
+const closeResultsBtn = document.getElementById('close-results-btn');
+
+// ─── Role Config ───
+const ROLE_CONFIG = {
+  badsha: { emoji: '👑', name: 'Badsha', color: '#D4AF37', points: 1000 },
+  wazeer: { emoji: '🎖️', name: 'Wazeer', color: '#3498db', points: 500 },
+  sipahi: { emoji: '⚔️', name: 'Sipahi', color: '#00A86B', points: 300 },
+  chor: { emoji: '🥷', name: 'Chor', color: '#8e44ad', points: 0 }
+};
 
 // ─── Initialize ───
 if (roomCode) displayRoomCode.textContent = roomCode;
@@ -41,22 +72,8 @@ socket.emit('create-room', {
   totalRounds: parseInt(sessionStorage.getItem('totalRounds')) || 5 
 });
 
-// ─── Role Emoji Map ───
-const ROLE_EMOJI = {
-  badsha: '👑',
-  wazeer: '🎖️',
-  sipahi: '⚔️',
-  chor: '🥷'
-};
+// ─── Functions ───
 
-const ROLE_DISPLAY = {
-  badsha: 'Badsha',
-  wazeer: 'Wazeer',
-  sipahi: 'Sipahi',
-  chor: 'Chor'
-};
-
-// ─── Render Player List ───
 function renderPlayerList(players) {
   const count = players.length;
   playerCountBadge.textContent = `${count}/4`;
@@ -66,11 +83,13 @@ function renderPlayerList(players) {
     if (i < count) {
       const p = players[i];
       const initial = p.name.charAt(0).toUpperCase();
+      const readyCheck = p.isReady ? '<span style="color:var(--green-light); font-size: 0.8rem; margin-left: auto;">Ready</span>' : '';
       html += `
         <li class="player-item">
           <div class="player-avatar">${initial}</div>
           <span class="player-name">${escapeHtml(p.name)}</span>
-          <span class="player-score">${p.totalScore !== undefined ? p.totalScore : 0}</span>
+          ${readyCheck}
+          <span class="player-score" style="margin-left: auto;">${p.totalScore !== undefined ? p.totalScore : 0}</span>
         </li>`;
     } else {
       html += `
@@ -82,11 +101,18 @@ function renderPlayerList(players) {
   }
   playerList.innerHTML = html;
 
-  // Enable start button when 4 players & in waiting/ready/results phase
-  startRoundBtn.disabled = count < 4 || (currentPhase !== 'waiting' && currentPhase !== 'ready' && currentPhase !== 'results');
+  // Handle start button for the very first round
+  if (currentPhase === 'waiting' || currentPhase === 'ready') {
+    if (count === 4) {
+      startRoundBtn.disabled = false;
+      startRoundText.textContent = "Start Round";
+    } else {
+      startRoundBtn.disabled = true;
+      startRoundText.textContent = "Wait for players...";
+    }
+  }
 }
 
-// ─── Render Scoreboard ───
 function renderScoreboard(scores) {
   const sorted = [...scores].sort((a, b) => b.totalScore - a.totalScore);
   let html = '';
@@ -103,38 +129,19 @@ function renderScoreboard(scores) {
   scoreboardSection.classList.remove('hidden');
 }
 
-// ─── Socket Events ───
+function showRoleCard(role) {
+  const config = ROLE_CONFIG[role];
+  roleEmoji.textContent = config.emoji;
+  roleName.textContent = config.name;
+  rolePoints.textContent = `Up to ${config.points} points`;
+  roleCardWrapper.className = 'role-card-wrapper role-' + role;
+  roleCard.classList.remove('flipped');
+  setTimeout(() => {
+    roleCard.classList.add('flipped');
+  }, 600);
+}
 
-socket.on('room-created', ({ roomCode: code }) => {
-  displayRoomCode.textContent = code;
-  sessionStorage.setItem('roomCode', code);
-});
-
-socket.on('player-joined', ({ players, phase, newPlayer }) => {
-  currentPhase = phase;
-  renderPlayerList(players);
-  showToast(`${newPlayer} joined the game!`, 'success');
-
-  if (players.length === 4) {
-    startRoundBtn.disabled = false;
-    showToast('All players joined! Start the round! 🎴', 'info');
-  }
-});
-
-socket.on('player-left', ({ players, phase }) => {
-  currentPhase = phase;
-  renderPlayerList(players);
-  showToast('A player left the game', 'error');
-});
-
-socket.on('host-round-started', ({ roundNumber, totalRounds, badsha, wazeer, hiddenPlayers }) => {
-  currentPhase = 'reveal';
-
-  // Show round section
-  roundSection.classList.remove('hidden');
-  roundBadge.textContent = `🎴 Round ${roundNumber} / ${totalRounds}`;
-
-  // Show revealed roles
+function showRevealedRoles(badsha, wazeer) {
   revealedRoles.innerHTML = `
     <div class="revealed-role">
       <div class="emoji">👑</div>
@@ -146,70 +153,216 @@ socket.on('host-round-started', ({ roundNumber, totalRounds, badsha, wazeer, hid
       <div class="role-label">Wazeer</div>
       <div class="player-name-reveal">${escapeHtml(wazeer.name)}</div>
     </div>`;
+}
 
-  // Show hidden players
-  hiddenPlayersDisplay.innerHTML = hiddenPlayers.map(p => `
-    <div class="revealed-role">
-      <div class="emoji">❓</div>
-      <div class="role-label">Hidden</div>
-      <div class="player-name-reveal">${escapeHtml(p.name)}</div>
+function showGuessUI(hiddenPlayers) {
+  selectedGuessId = null;
+  submitGuessBtn.disabled = true;
+  guessOptions.innerHTML = hiddenPlayers.map(p => `
+    <div class="guess-card" id="guess-${p.id}" data-player-id="${p.id}" onclick="selectGuess('${p.id}')">
+      <div class="mystery-icon">🎭</div>
+      <div class="guess-name">${escapeHtml(p.name)}</div>
     </div>`).join('');
+  guessSection.classList.remove('hidden');
+  waitingGuessSection.classList.add('hidden');
+}
 
-  // Show waiting status
-  hostStatus.innerHTML = '<span class="waiting-dots">Waiting for Wazeer to guess</span>';
-  hostStatus.className = 'status-message status-waiting';
+window.selectGuess = function(playerId) {
+  selectedGuessId = playerId;
+  submitGuessBtn.disabled = false;
+  document.querySelectorAll('.guess-card').forEach(card => card.classList.remove('selected'));
+  document.getElementById(`guess-${playerId}`).classList.add('selected');
+};
 
-  // Hide action buttons & start btn during play
+// ─── Socket Events ───
+
+socket.on('room-created', ({ roomCode: code, players }) => {
+  displayRoomCode.textContent = code;
+  sessionStorage.setItem('roomCode', code);
+  renderPlayerList(players);
+});
+
+socket.on('player-joined', ({ players, phase, newPlayer }) => {
+  currentPhase = phase;
+  renderPlayerList(players);
+  if (newPlayer !== hostName) showToast(`${newPlayer} joined the game!`, 'success');
+  if (players.length === 4) {
+    showToast('All players joined! Start the round! 🎴', 'info');
+  }
+});
+
+socket.on('player-left', ({ players, phase }) => {
+  currentPhase = phase;
+  renderPlayerList(players);
+  showToast('A player left the game', 'error');
+});
+
+socket.on('player-ready-update', ({ readyCount, allReady }) => {
+  // Update button text
+  nextRoundText.textContent = allReady ? "Next Round" : `Wait for Ready... (${readyCount}/4)`;
+  nextRoundBtn.disabled = !allReady;
+  
+  // Update player list showing ready tags (wait, we need players array updated, but server only sends count. Let's just trust count for host button).
+});
+
+// Since the host is a player, we receive normal round-started
+socket.on('round-started', ({ roundNumber, totalRounds, yourRole, badsha, wazeer, hiddenPlayers, isWazeer }) => {
+  currentPhase = 'reveal';
+  amIReady = false;
+  submitGuessBtn.innerHTML = '<span>🎯</span> Submit Guess';
+
+  // Update Host Dashboard side
+  startRoundBtn.parentElement.classList.add('hidden'); // Hide the start round section temporarily
   actionButtons.classList.add('hidden');
-  startRoundBtn.disabled = true;
+
+  // Update Player Panel side
+  waitingSection.classList.add('hidden');
+  gameSection.classList.remove('hidden');
+  roundBadge.textContent = `🎴 Round ${roundNumber} / ${totalRounds}`;
+  
+  showRoleCard(yourRole);
+  showRevealedRoles(badsha, wazeer);
+  
+  guessSection.classList.add('hidden');
+  waitingGuessSection.classList.add('hidden');
+
+  if (isWazeer) {
+    setTimeout(() => { showGuessUI(hiddenPlayers); }, 1500);
+  } else {
+    waitingGuessSection.classList.remove('hidden');
+  }
+
+  // Hide scoreboard until result
+  scoreboardSection.classList.add('hidden');
 });
 
 socket.on('round-result', ({ results, totalScores, isGameOver }) => {
   currentPhase = isGameOver ? 'finished' : 'results';
 
-  // Update host status
-  if (results.wasCorrect) {
-    hostStatus.innerHTML = '✅ Wazeer guessed correctly! Chor was caught!';
-    hostStatus.className = 'status-message status-waiting';
+  guessSection.classList.add('hidden');
+  waitingGuessSection.classList.add('hidden');
+  if (isGameOver) {
+    closeResultsBtn.innerHTML = 'View Final Results 🏆';
   } else {
-    hostStatus.innerHTML = '❌ Wazeer guessed wrong! Chor escaped!';
-    hostStatus.className = 'status-message status-error';
+    closeResultsBtn.innerHTML = 'Continue (Ready for Next Round)';
   }
 
-  // Update revealed roles to show all
-  const allRolesHtml = results.roles.map(r => `
-    <div class="revealed-role">
-      <div class="emoji">${ROLE_EMOJI[r.role]}</div>
-      <div class="role-label">${ROLE_DISPLAY[r.role]}</div>
-      <div class="player-name-reveal">${escapeHtml(r.name)}</div>
-      <div style="color: var(--gold-primary); font-weight: 700; margin-top: 4px;">+${r.points}</div>
-    </div>`).join('');
+  if (results.wasCorrect) {
+    resultEmoji.textContent = '🎯';
+    resultVerdict.innerHTML = `Wazeer caught the Chor!<br><span style="font-size:1rem;color:rgba(255,255,255,0.7);font-weight:normal;margin-top:8px;display:block;">Wazeer guessed <b>${escapeHtml(results.guessedPlayer.name)}</b> (who was the actual Chor!)</span>`;
+    resultVerdict.className = 'result-verdict correct';
+    new Audio('/sounds/click-nice.mp3').play().catch(e => console.warn('Audio play blocked:', e));
+  } else {
+    resultEmoji.textContent = '😈';
+    const actualChor = results.roles.find(r => r.role === 'chor');
+    resultVerdict.innerHTML = `Chor escaped! Wazeer was wrong!<br><span style="font-size:1rem;color:rgba(255,255,255,0.7);font-weight:normal;margin-top:8px;display:block;">Wazeer guessed <b>${escapeHtml(results.guessedPlayer.name)}</b>, but the actual Chor was <b>${escapeHtml(actualChor.name)}</b>!</span>`;
+    resultVerdict.className = 'result-verdict wrong';
+    new Audio('/sounds/faaaa.mp3').play().catch(e => console.warn('Audio play blocked:', e));
+  }
 
-  hiddenPlayersDisplay.innerHTML = '';
-  revealedRoles.innerHTML = allRolesHtml;
+  const roleTagClass = {
+    badsha: 'role-tag-badsha',
+    wazeer: 'role-tag-wazeer',
+    sipahi: 'role-tag-sipahi',
+    chor: 'role-tag-chor'
+  };
 
-  // Update scoreboard
+  roundResultsList.innerHTML = results.roles.map(r => {
+    const config = ROLE_CONFIG[r.role];
+    const isMe = r.name === hostName;
+    return `
+      <div class="round-result-item" ${isMe ? 'style="border: 1px solid var(--gold-glow);"' : ''}>
+        <span>${config.emoji} ${escapeHtml(r.name)} ${isMe ? '(You)' : ''}</span>
+        <span class="role-tag ${roleTagClass[r.role]}">${config.name}</span>
+        <span class="points-badge">+${r.points}</span>
+      </div>`;
+  }).join('');
+
+  const sorted = [...totalScores].sort((a, b) => b.totalScore - a.totalScore);
+  resultScoresSection.innerHTML = `
+    <div class="section-title" style="justify-content: center; margin-top: 8px;">
+      <span class="icon">🏆</span> Standings
+    </div>
+    ${sorted.map((p, i) => {
+      const isMe = p.name === hostName;
+      return `<div class="round-result-item" ${isMe ? 'style="border: 1px solid var(--gold-glow);"' : ''}>
+        <span>${i + 1}. ${escapeHtml(p.name)} ${isMe ? '⭐' : ''}</span>
+        <span class="points-badge">${p.totalScore}</span>
+      </div>`;
+    }).join('')}`;
+
+  resultsOverlay.classList.remove('hidden');
   renderScoreboard(totalScores);
+  renderPlayerList(totalScores.map(s => ({ name: s.name, totalScore: s.totalScore, isReady: false })));
 
-  // Update player list with scores
-  renderPlayerList(totalScores.map(s => ({ name: s.name, totalScore: s.totalScore })));
-
-  // Show action buttons if not game over
   if (!isGameOver) {
     actionButtons.classList.remove('hidden');
-    startRoundBtn.disabled = false;
+    nextRoundBtn.disabled = true;
+    nextRoundText.textContent = "Wait for Ready... (0/4)";
   }
 });
 
-socket.on('game-over', ({ finalScores, roundHistory }) => {
-  currentPhase = 'finished';
+socket.on('game-over', ({ finalScores }) => {
+  cachedFinalScores = finalScores;
+});
 
-  // Fill game over overlay
-  const winner = finalScores[0];
+// ─── Button Handlers ───
+
+startRoundBtn.addEventListener('click', () => {
+  socket.emit('start-round', { roomCode: sessionStorage.getItem('roomCode') });
+  startRoundBtn.disabled = true;
+});
+
+nextRoundBtn.addEventListener('click', () => {
+  socket.emit('start-round', { roomCode: sessionStorage.getItem('roomCode') });
+  actionButtons.classList.add('hidden');
+});
+
+endGameBtn.addEventListener('click', () => {
+  socket.emit('end-game', { roomCode: sessionStorage.getItem('roomCode') });
+});
+
+newGameBtn.addEventListener('click', () => {
+  sessionStorage.clear();
+  window.location.href = '/';
+});
+
+submitGuessBtn.addEventListener('click', () => {
+  if (!selectedGuessId) return;
+  submitGuessBtn.disabled = true;
+  submitGuessBtn.innerHTML = '<div class="spinner" style="width:20px;height:20px;margin:0;border-width:2px;"></div> Submitting...';
+  socket.emit('wazeer-guess', { roomCode: sessionStorage.getItem('roomCode'), guessedPlayerId: selectedGuessId });
+});
+
+closeResultsBtn.addEventListener('click', () => {
+  if (cachedFinalScores) {
+    showGameOverScreen();
+    return;
+  }
+
+  if (amIReady) return;
+  amIReady = true;
+  closeResultsBtn.textContent = 'Waiting for others...';
+  socket.emit('player-ready', { roomCode: sessionStorage.getItem('roomCode') });
+  
+  resultsOverlay.classList.add('hidden');
+  guessSection.classList.add('hidden');
+  waitingGuessSection.classList.add('hidden');
+  roleCard.classList.remove('flipped');
+  gameSection.classList.add('hidden');
+  waitingSection.classList.remove('hidden');
+  waitingSection.querySelector('.status-waiting span').textContent = 'Waiting for you to start next round...';
+});
+
+function showGameOverScreen() {
+  currentPhase = 'finished';
+  resultsOverlay.classList.add('hidden');
+
+  const winner = cachedFinalScores[0];
   winnerName.textContent = `🎉 ${winner.name} wins with ${winner.totalScore} points!`;
 
   let html = '';
-  finalScores.forEach((p, i) => {
+  cachedFinalScores.forEach((p, i) => {
     const rankClass = i === 0 ? 'rank-1' : i === 1 ? 'rank-2' : i === 2 ? 'rank-3' : 'rank-other';
     html += `
       <tr class="${i === 0 ? 'winner' : ''}">
@@ -222,40 +375,18 @@ socket.on('game-over', ({ finalScores, roundHistory }) => {
 
   gameOverOverlay.classList.remove('hidden');
   spawnConfetti();
-});
-
-// ─── Button Handlers ───
-
-startRoundBtn.addEventListener('click', () => {
-  const code = sessionStorage.getItem('roomCode');
-  socket.emit('start-round', { roomCode: code });
-  startRoundBtn.disabled = true;
-});
-
-nextRoundBtn.addEventListener('click', () => {
-  const code = sessionStorage.getItem('roomCode');
-  socket.emit('start-round', { roomCode: code });
-  actionButtons.classList.add('hidden');
-});
-
-endGameBtn.addEventListener('click', () => {
-  const code = sessionStorage.getItem('roomCode');
-  socket.emit('end-game', { roomCode: code });
-});
-
-newGameBtn.addEventListener('click', () => {
-  sessionStorage.clear();
-  window.location.href = '/';
-});
+}
 
 // ─── Error handling ───
 socket.on('error-msg', ({ message }) => {
   showToast(message, 'error');
-  startRoundBtn.disabled = false;
+  if (submitGuessBtn) {
+    submitGuessBtn.disabled = false;
+    submitGuessBtn.innerHTML = '<span>🎯</span> Submit Guess';
+  }
 });
 
-// ─── Utility Functions ───
-
+// ─── Utility ───
 function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
